@@ -95,6 +95,16 @@ Set `ICLOUD_USERNAME` (required). All else is optional — see
 | `icloud://mail/inbox/recent` | Most recent inbox messages |
 | `icloud://calendar/today` | Today + tomorrow's events |
 
+## Behavior notes
+
+- **Empty/missing headers:** messages whose `Subject` header is absent *or*
+  present-but-blank render as `(no subject)`; a blank/absent `From` renders as
+  `(unknown)`. (Some mail has an empty subject line rather than no subject line
+  at all — both are normalized.)
+- **Snippets** prefer the `text/plain` part; for HTML-only mail, tags are
+  stripped (`<style>`/`<script>`/`<head>` content discarded) so you still get a
+  readable preview.
+
 ## Development
 
 ```bash
