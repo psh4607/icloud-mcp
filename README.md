@@ -19,7 +19,7 @@ future version behind explicit per-action confirmation.
 ## Install
 
 ```bash
-pip install git+ssh://git@github.com/eodozzy/icloud-mcp
+pip install git+https://github.com/eodozzy/icloud-mcp
 ```
 
 Or for local development:
@@ -177,3 +177,8 @@ Notes:
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Not affiliated with, endorsed by, or sponsored by Apple Inc. iCloud is a
+trademark of Apple Inc.
