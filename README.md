@@ -59,7 +59,41 @@ To **reuse an existing keyring entry** (e.g. one named `talos-icloud`), set
 Set `ICLOUD_USERNAME` (required). All else is optional — see
 [`.env.example`](.env.example) for the full list of endpoint/timezone overrides.
 
-## Register with Claude Code / Claude Desktop
+## Register with an MCP client
+
+The server speaks MCP over **stdio**: a client launches the `icloud-mcp` command
+as a subprocess and talks to it over stdin/stdout. "Installing" it into a client
+just means telling that client which command to run and which env vars to pass —
+the password itself stays in the keyring, never in the client config.
+
+If `icloud-mcp` isn't on your `PATH` (e.g. you installed into a virtualenv),
+use the absolute path to the launcher, e.g. `/path/to/repo/.venv/bin/icloud-mcp`.
+
+### Claude Code
+
+```bash
+claude mcp add icloud \
+  --env ICLOUD_USERNAME=you@icloud.com \
+  --env ICLOUD_KEYRING_SERVICE=icloud-mcp \
+  -- icloud-mcp
+```
+
+Then `claude mcp list` to confirm. Add `-s user` to make it available across all
+projects rather than just the current one.
+
+### Claude Desktop
+
+Add the server to Claude Desktop's config file. On macOS this is:
+
+```
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+(On Windows: `%APPDATA%\Claude\claude_desktop_config.json`.)
+
+The easiest way to open it is **Settings → Developer → Edit Config**. Add an
+`mcpServers` key alongside whatever is already in the file — do **not** paste a
+second top-level `{ ... }` object, or the file becomes invalid JSON:
 
 ```json
 {
@@ -67,14 +101,34 @@ Set `ICLOUD_USERNAME` (required). All else is optional — see
     "icloud": {
       "command": "icloud-mcp",
       "env": {
-        "ICLOUD_USERNAME": "you@icloud.com"
+        "ICLOUD_USERNAME": "you@icloud.com",
+        "ICLOUD_KEYRING_SERVICE": "icloud-mcp"
       }
     }
   }
 }
 ```
 
-(If installed in a virtualenv, point `command` at `.venv/bin/icloud-mcp`.)
+If the file already contains other keys, merge `mcpServers` in as a sibling
+(remember the comma between keys):
+
+```json
+{
+  "someExistingSetting": "...",
+  "mcpServers": { "icloud": { "...": "..." } }
+}
+```
+
+Then **fully quit** Claude Desktop (⌘Q, not just closing the window) and reopen
+it. The server shows up as a *Local MCP server* and its tools become available.
+
+Notes:
+
+- **First call prompts for Keychain access.** macOS asks whether `icloud-mcp`
+  may read the keyring item; click **Always Allow** to avoid repeat prompts.
+- **Claude Desktop may rewrite this file** when it saves its own preferences,
+  dropping hand-added keys it doesn't recognize. If the server disappears after
+  you change other settings, just re-add the `mcpServers` block.
 
 ## Tools & resources
 
