@@ -1,0 +1,32 @@
+[project]
+name = "icloud-mcp"
+version = "0.1.0"
+description = "A Model Context Protocol server for iCloud mail and calendar, with macOS Keychain credential storage."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Eric Osborne" }]
+keywords = ["mcp", "icloud", "imap", "caldav", "model-context-protocol"]
+dependencies = [
+    "mcp[cli]",
+    "imapclient",
+    "caldav",
+    "keyring",
+    "pydantic",
+]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-anyio"]
+
+[project.scripts]
+icloud-mcp = "icloud_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/icloud_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
