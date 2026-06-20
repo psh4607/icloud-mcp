@@ -87,3 +87,16 @@ def test_get_message_returns_full_body():
 def test_get_message_missing_uid_returns_none():
     client = _FakeMailClient({})
     assert mail_ops.get_message(client, 999) is None
+
+
+def test_empty_subject_and_from_fall_back():
+    # Present-but-empty headers, not absent — the real uid 93530 case.
+    raw = b"From: \r\nSubject: \r\nContent-Type: text/plain; charset=utf-8\r\n\r\nbody\r\n"
+    client = _FakeMailClient({5: raw})
+    msg = mail_ops.list_messages(client)[0]
+    assert msg.subject == "(no subject)"
+    assert msg.sender == "(unknown)"
+
+    full = mail_ops.get_message(client, 5)
+    assert full.subject == "(no subject)"
+    assert full.sender == "(unknown)"

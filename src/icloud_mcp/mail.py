@@ -97,6 +97,17 @@ def body_snippet(msg: EmailMessage, max_chars: int = 200) -> str:
 # Stateless fetch operations
 # --------------------------------------------------------------------------
 
+def _summary_fields(uid: int, msg: EmailMessage) -> dict:
+    """Common Message fields, with fallbacks for absent *or* empty headers."""
+    return {
+        "uid": uid,
+        "date": msg.get("Date", ""),
+        "from": decode_header(msg.get("From", "")) or "(unknown)",
+        "subject": decode_header(msg.get("Subject", "")) or "(no subject)",
+        "snippet": " ".join(body_snippet(msg).split()),
+    }
+
+
 def _search_uids(imap, since: int | date | None, limit: int) -> list[int]:
     if isinstance(since, int) and since > 0:
         uids = imap.search(["UID", f"{since + 1}:*"])
@@ -129,15 +140,7 @@ def list_messages(
         if not raw:
             continue
         msg = email_lib.message_from_bytes(raw)
-        out.append(
-            Message(
-                uid=uid,
-                date=msg.get("Date", ""),
-                **{"from": decode_header(msg.get("From", "(unknown)"))},
-                subject=decode_header(msg.get("Subject", "(no subject)")),
-                snippet=" ".join(body_snippet(msg).split()),
-            )
-        )
+        out.append(Message(**_summary_fields(uid, msg)))
     out.sort(key=lambda m: m.uid, reverse=True)
     return out
 
@@ -160,15 +163,7 @@ def search_messages(
         if not raw:
             continue
         msg = email_lib.message_from_bytes(raw)
-        out.append(
-            Message(
-                uid=uid,
-                date=msg.get("Date", ""),
-                **{"from": decode_header(msg.get("From", "(unknown)"))},
-                subject=decode_header(msg.get("Subject", "(no subject)")),
-                snippet=" ".join(body_snippet(msg).split()),
-            )
-        )
+        out.append(Message(**_summary_fields(uid, msg)))
     out.sort(key=lambda m: m.uid, reverse=True)
     return out
 
@@ -184,11 +179,4 @@ def get_message(client: MailClient, uid: int, folder: str = "INBOX") -> FullMess
     if not raw:
         return None
     msg = email_lib.message_from_bytes(raw)
-    return FullMessage(
-        uid=uid,
-        date=msg.get("Date", ""),
-        **{"from": decode_header(msg.get("From", "(unknown)"))},
-        subject=decode_header(msg.get("Subject", "(no subject)")),
-        snippet=" ".join(body_snippet(msg).split()),
-        body=body_text(msg),
-    )
+    return FullMessage(**_summary_fields(uid, msg), body=body_text(msg))
