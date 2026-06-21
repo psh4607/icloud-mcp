@@ -78,6 +78,13 @@ def _require_writes(app: AppContext) -> None:
         )
 
 
+async def _confirmed(ctx: Context, app: AppContext, message: str) -> bool:
+    """Gate a mutation: require writes enabled (raises if not) + user confirmation."""
+    _require_writes(app)
+    result = await ctx.elicit(message=message, schema=Confirm)
+    return result.action == "accept"
+
+
 def _window(app: AppContext, days_ahead: int) -> tuple[datetime, datetime]:
     today = datetime.now(app.settings.tz).date()
     start = datetime.combine(today, time.min, tzinfo=app.settings.tz)
@@ -176,10 +183,8 @@ async def send_mail(
 ) -> str:
     """Send a plain-text email. Requires writes enabled + interactive confirmation."""
     app = _ctx(ctx)
-    _require_writes(app)
     summary = f"Send email to {to}" + (f" (cc {cc})" if cc else "") + f" — “{subject}”?"
-    result = await ctx.elicit(message=summary, schema=Confirm)
-    if result.action != "accept":
+    if not await _confirmed(ctx, app, summary):
         return "Cancelled — email not sent."
     return await _run_blocking(write_ops.send_message, app.settings, to, subject, body, cc)
 
@@ -198,16 +203,131 @@ async def create_event(
     Requires writes enabled + interactive confirmation.
     """
     app = _ctx(ctx)
-    _require_writes(app)
     where = f" at {location}" if location else ""
-    result = await ctx.elicit(
-        message=f"Create event “{title}” from {start} to {end}{where}?", schema=Confirm
-    )
-    if result.action != "accept":
+    if not await _confirmed(ctx, app, f"Create event “{title}” from {start} to {end}{where}?"):
         return "Cancelled — event not created."
     return await _run_blocking(
         write_ops.create_event, app.calendar, title, start, end, calendar, location
     )
+
+
+@mcp.tool()
+async def update_event(
+    ctx: Context,
+    uid: str,
+    title: str = "",
+    start: str = "",
+    end: str = "",
+    location: str = "",
+) -> str:
+    """Edit an existing event (by UID). Empty fields are left unchanged.
+
+    Requires writes enabled + interactive confirmation.
+    """
+    app = _ctx(ctx)
+    changes = ", ".join(
+        f"{k}={v}" for k, v in (("title", title), ("start", start), ("end", end), ("location", location)) if v
+    ) or "(no fields given)"
+    if not await _confirmed(ctx, app, f"Update event {uid}: {changes}?"):
+        return "Cancelled — event not updated."
+    return await _run_blocking(
+        write_ops.update_event, app.calendar, uid, title, start, end, location
+    )
+
+
+@mcp.tool()
+async def delete_event(ctx: Context, uid: str) -> str:
+    """Delete a calendar event by UID. Requires writes enabled + interactive confirmation."""
+    app = _ctx(ctx)
+    if not await _confirmed(ctx, app, f"Permanently delete event {uid}?"):
+        return "Cancelled — event not deleted."
+    return await _run_blocking(write_ops.delete_event, app.calendar, uid)
+
+
+@mcp.tool()
+async def reply_mail(
+    ctx: Context, uid: int, body: str, folder: str = "INBOX", reply_all: bool = False
+) -> str:
+    """Reply to message `uid` (quoting the original). Writes enabled + confirmation."""
+    app = _ctx(ctx)
+    _require_writes(app)
+    reply_ctx = await _run_blocking(mail_ops.reply_context, app.mail, uid, folder)
+    if reply_ctx is None:
+        return f"Message {uid} not found in {folder}."
+    scope = "all recipients" if reply_all else reply_ctx["from_addr"]
+    result = await ctx.elicit(
+        message=f"Reply to {scope} re “{reply_ctx['subject']}”?", schema=Confirm
+    )
+    if result.action != "accept":
+        return "Cancelled — reply not sent."
+    return await _run_blocking(
+        write_ops.reply_message, app.settings, reply_ctx, body, reply_all
+    )
+
+
+@mcp.tool()
+async def forward_mail(
+    ctx: Context, uid: int, to: str, body: str = "", folder: str = "INBOX"
+) -> str:
+    """Forward message `uid` to `to`. Writes enabled + confirmation."""
+    app = _ctx(ctx)
+    _require_writes(app)
+    fwd_ctx = await _run_blocking(mail_ops.reply_context, app.mail, uid, folder)
+    if fwd_ctx is None:
+        return f"Message {uid} not found in {folder}."
+    result = await ctx.elicit(
+        message=f"Forward “{fwd_ctx['subject']}” to {to}?", schema=Confirm
+    )
+    if result.action != "accept":
+        return "Cancelled — message not forwarded."
+    return await _run_blocking(write_ops.forward_message, app.settings, fwd_ctx, to, body)
+
+
+@mcp.tool()
+async def create_contact(
+    ctx: Context,
+    full_name: str,
+    emails: list[str] | None = None,
+    phones: list[str] | None = None,
+    org: str = "",
+) -> str:
+    """Create a new contact. Requires writes enabled + interactive confirmation."""
+    app = _ctx(ctx)
+    if not await _confirmed(ctx, app, f"Create contact “{full_name}”?"):
+        return "Cancelled — contact not created."
+    return await _run_blocking(
+        write_ops.create_contact, app.contacts, full_name, emails, phones, org
+    )
+
+
+@mcp.tool()
+async def update_contact(
+    ctx: Context,
+    uid: str,
+    full_name: str = "",
+    emails: list[str] | None = None,
+    phones: list[str] | None = None,
+    org: str = "",
+) -> str:
+    """Edit a contact by UID (from list/search_contacts). Empty/None fields unchanged.
+
+    Requires writes enabled + interactive confirmation.
+    """
+    app = _ctx(ctx)
+    if not await _confirmed(ctx, app, f"Update contact {uid}?"):
+        return "Cancelled — contact not updated."
+    return await _run_blocking(
+        write_ops.update_contact, app.contacts, uid, full_name, emails, phones, org
+    )
+
+
+@mcp.tool()
+async def delete_contact(ctx: Context, uid: str) -> str:
+    """Delete a contact by UID. Requires writes enabled + interactive confirmation."""
+    app = _ctx(ctx)
+    if not await _confirmed(ctx, app, f"Permanently delete contact {uid}?"):
+        return "Cancelled — contact not deleted."
+    return await _run_blocking(write_ops.delete_contact, app.contacts, uid)
 
 
 # --------------------------------------------------------------------------

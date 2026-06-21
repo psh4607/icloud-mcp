@@ -200,15 +200,38 @@ def list_folders(client: MailClient) -> list[Folder]:
     return [Folder(name=name) for _flags, _delim, name in conn.list_folders()]
 
 
-def get_message(client: MailClient, uid: int, folder: str = "INBOX") -> FullMessage | None:
-    """Fetch a single message with its full text body."""
+def _fetch_email(client: MailClient, uid: int, folder: str = "INBOX") -> EmailMessage | None:
+    """Fetch and parse one message (read-only BODY.PEEK), or None if absent."""
     imap = client.select(folder)
-    fetched = imap.fetch([uid], ["BODY.PEEK[]"])
-    data = fetched.get(uid)
+    data = imap.fetch([uid], ["BODY.PEEK[]"]).get(uid)
     if not data:
         return None
     raw = data.get(b"BODY[]")
     if not raw:
         return None
-    msg = email_lib.message_from_bytes(raw)
+    return email_lib.message_from_bytes(raw)
+
+
+def get_message(client: MailClient, uid: int, folder: str = "INBOX") -> FullMessage | None:
+    """Fetch a single message with its full text body."""
+    msg = _fetch_email(client, uid, folder)
+    if msg is None:
+        return None
     return FullMessage(**_summary_fields(uid, msg), body=body_text(msg))
+
+
+def reply_context(client: MailClient, uid: int, folder: str = "INBOX") -> dict | None:
+    """Fields needed to build a reply/forward of message `uid`, or None if absent."""
+    msg = _fetch_email(client, uid, folder)
+    if msg is None:
+        return None
+    return {
+        "message_id": (msg.get("Message-ID", "") or "").strip(),
+        "references": (msg.get("References", "") or "").strip(),
+        "from_addr": decode_header(msg.get("From", "")),
+        "to": decode_header(msg.get("To", "")),
+        "cc": decode_header(msg.get("Cc", "")),
+        "subject": decode_header(msg.get("Subject", "")),
+        "date": (msg.get("Date", "") or "").strip(),
+        "body": body_text(msg),
+    }

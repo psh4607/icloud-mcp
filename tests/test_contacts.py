@@ -52,6 +52,23 @@ def test_parse_vcard_garbage_returns_none():
     assert contacts_ops.parse_vcard("not a vcard at all") is None
 
 
+def test_parse_vcard_reads_uid():
+    text = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:ABC-123\r\nFN:Has UID\r\nEND:VCARD\r\n"
+    assert contacts_ops.parse_vcard(text).uid == "ABC-123"
+
+
+def test_build_vcard_round_trips():
+    text = contacts_ops.build_vcard(
+        "U-1", "Grace Hopper", ["grace@navy.mil", "g@x.com"], ["+1-555-7"], "US Navy"
+    )
+    back = contacts_ops.parse_vcard(text)
+    assert back.uid == "U-1"
+    assert back.full_name == "Grace Hopper"
+    assert back.emails == ["grace@navy.mil", "g@x.com"]
+    assert back.phones == ["+1-555-7"]
+    assert back.org == "US Navy"
+
+
 def test_list_contacts_skips_unparseable_and_caps_limit():
     client = _FakeContactsClient([_VCARD_FULL, "junk", _VCARD_MINIMAL])
     result = contacts_ops.list_contacts(client, limit=10)

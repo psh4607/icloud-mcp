@@ -139,3 +139,186 @@ def test_create_event_no_calendars():
     client = _FakeCalClient([])
     with pytest.raises(writes.WriteError, match="No calendars"):
         writes.create_event(client, "X", "2026-06-21T14:00:00", "2026-06-21T15:00:00")
+
+
+# --- update_event / delete_event -----------------------------------------
+
+_SEED_ICAL = (
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//t//EN\r\n"
+    "BEGIN:VEVENT\r\nUID:evt-1\r\nDTSTAMP:20260101T000000Z\r\n"
+    "DTSTART:20260621T140000\r\nDTEND:20260621T150000\r\nSUMMARY:Old Title\r\n"
+    "END:VEVENT\r\nEND:VCALENDAR\r\n"
+)
+
+
+class _FakeEvent:
+    def __init__(self, data):
+        self.data = data
+        self.saved = False
+        self.deleted = False
+
+    def save(self):
+        self.saved = True
+
+    def delete(self):
+        self.deleted = True
+
+
+class _FakeCalWithEvents:
+    def __init__(self, events):
+        self._events = events  # uid -> _FakeEvent
+
+    def events(self):
+        # _find_event matches a "UID:<uid>" line in each event's .data.
+        return list(self._events.values())
+
+
+class _FakeCalClientEvents:
+    def __init__(self, events):
+        self._cal = _FakeCalWithEvents(events)
+
+    def principal(self):
+        return type("P", (), {"calendars": lambda self_: [self._cal]})()
+
+
+def test_update_event_edits_only_given_fields():
+    ev = _FakeEvent(_SEED_ICAL)
+    client = _FakeCalClientEvents({"evt-1": ev})
+    writes.update_event(client, "evt-1", title="New Title", location="Room 9")
+    assert ev.saved
+    assert "SUMMARY:New Title" in ev.data
+    assert "LOCATION:Room 9" in ev.data
+    assert "DTSTART:20260621T140000" in ev.data  # untouched
+
+
+def test_update_event_not_found():
+    client = _FakeCalClientEvents({})
+    with pytest.raises(writes.WriteError, match="not found"):
+        writes.update_event(client, "missing", title="x")
+
+
+def test_delete_event_calls_delete():
+    ev = _FakeEvent(_SEED_ICAL)
+    client = _FakeCalClientEvents({"evt-1": ev})
+    writes.delete_event(client, "evt-1")
+    assert ev.deleted
+
+
+# --- reply / forward ------------------------------------------------------
+
+_CTX = {
+    "message_id": "<abc@mail>",
+    "references": "<root@mail>",
+    "from_addr": "alice@example.com",
+    "to": "me@icloud.com, bob@example.com",
+    "cc": "carol@example.com",
+    "subject": "Project plan",
+    "date": "Sat, 20 Jun 2026 10:00:00 +0000",
+    "body": "Original line one.\nOriginal line two.",
+}
+
+
+def _capture_send(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(writes, "_send", lambda settings, msg: sent.update(msg=msg))
+    return sent
+
+
+def test_reply_message_sets_threading_and_quotes(monkeypatch):
+    sent = _capture_send(monkeypatch)
+    writes.reply_message(_settings(), _CTX, "My reply.")
+    msg = sent["msg"]
+    assert msg["To"] == "alice@example.com"
+    assert msg["Subject"] == "Re: Project plan"
+    assert msg["In-Reply-To"] == "<abc@mail>"
+    assert msg["References"] == "<root@mail> <abc@mail>"
+    content = msg.get_content()
+    assert content.startswith("My reply.")
+    assert "> Original line one." in content
+    assert "alice@example.com wrote:" in content
+
+
+def test_reply_all_adds_other_recipients_minus_self(monkeypatch):
+    sent = _capture_send(monkeypatch)
+    writes.reply_message(_settings(), _CTX, "Reply.", reply_all=True)
+    cc = sent["msg"]["Cc"]
+    assert "bob@example.com" in cc and "carol@example.com" in cc
+    assert "me@icloud.com" not in cc  # self excluded
+    assert "alice@example.com" not in (cc or "")  # primary recipient not duplicated
+
+
+def test_reply_message_keeps_existing_re_prefix(monkeypatch):
+    sent = _capture_send(monkeypatch)
+    ctx = {**_CTX, "subject": "Re: Project plan"}
+    writes.reply_message(_settings(), ctx, "ok")
+    assert sent["msg"]["Subject"] == "Re: Project plan"
+
+
+def test_forward_message_builds_forward_block(monkeypatch):
+    sent = _capture_send(monkeypatch)
+    writes.forward_message(_settings(), _CTX, "fwd@example.com", "FYI.")
+    msg = sent["msg"]
+    assert msg["To"] == "fwd@example.com"
+    assert msg["Subject"] == "Fwd: Project plan"
+    content = msg.get_content()
+    assert content.startswith("FYI.")
+    assert "Forwarded message" in content
+    assert "From: alice@example.com" in content
+    assert "Original line one." in content
+
+
+# --- contact create / update / delete -------------------------------------
+
+class _FakeContactsClient:
+    def __init__(self, entries=None):
+        self._entries = entries or {}  # uid -> (href, text)
+        self.put = None
+        self.deleted = None
+
+    def addressbook_url(self):
+        return "https://card.test/home/book/"
+
+    def find_entry_by_uid(self, uid):
+        return self._entries.get(uid)
+
+    def put_vcard(self, url, text):
+        self.put = (url, text)
+
+    def delete_resource(self, url):
+        self.deleted = url
+
+
+def test_create_contact_puts_vcard():
+    client = _FakeContactsClient()
+    msg = writes.create_contact(client, "Grace Hopper", ["grace@navy.mil"], ["+1-555-7"])
+    url, text = client.put
+    assert url.startswith("https://card.test/home/book/") and url.endswith(".vcf")
+    assert "FN:Grace Hopper" in text
+    assert "grace@navy.mil" in text
+    assert "uid" in msg.lower()
+
+
+def test_update_contact_merges_and_preserves_other_fields():
+    existing = (
+        "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:c-1\r\nFN:Old Name\r\n"
+        "EMAIL:old@x.com\r\nNOTE:keep me\r\nEND:VCARD\r\n"
+    )
+    client = _FakeContactsClient({"c-1": ("https://card.test/home/book/c-1.vcf", existing)})
+    writes.update_contact(client, "c-1", full_name="New Name", emails=["new@x.com"])
+    url, text = client.put
+    assert url.endswith("c-1.vcf")
+    assert "FN:New Name" in text
+    assert "new@x.com" in text and "old@x.com" not in text  # emails replaced
+    assert "NOTE:keep me" in text  # unmodeled field preserved
+
+
+def test_update_contact_not_found():
+    client = _FakeContactsClient()
+    with pytest.raises(writes.WriteError, match="not found"):
+        writes.update_contact(client, "nope", full_name="x")
+
+
+def test_delete_contact_deletes_href():
+    client = _FakeContactsClient({"c-1": ("https://card.test/home/book/c-1.vcf", "x")})
+    writes.delete_contact(client, "c-1")
+    assert client.deleted == "https://card.test/home/book/c-1.vcf"

@@ -139,20 +139,56 @@ class ContactsClient:
         self._addressbooks = urls
         return urls
 
-    def fetch_vcards(self) -> list[str]:
-        """Return raw vCard text for every contact across all addressbooks."""
+    def fetch_vcard_entries(self) -> list[tuple[str, str]]:
+        """Return (resource_url, vcard_text) for every contact across all addressbooks."""
         report = (
             '<?xml version="1.0" encoding="utf-8"?>'
             '<c:addressbook-query xmlns:d="DAV:" xmlns:c="%s">'
             "<d:prop><d:getetag/><c:address-data/></d:prop></c:addressbook-query>" % _CARDDAV
         )
-        cards: list[str] = []
+        entries: list[tuple[str, str]] = []
         for url in self._addressbook_urls():
             raw = self._client().request(
                 url, "REPORT", report, {"Depth": "1", "Content-Type": "application/xml"}
             ).raw
-            cards.extend(html.unescape(m).strip() for m in _ADDRDATA_RE.findall(raw))
-        return cards
+            for block in _RESPONSE_RE.findall(raw):
+                data = _ADDRDATA_RE.search(block)
+                href = _HREF_RE.search(block)
+                if data and href:
+                    entries.append((urljoin(url, href.group(1).strip()), html.unescape(data.group(1)).strip()))
+        return entries
+
+    def fetch_vcards(self) -> list[str]:
+        """Return raw vCard text for every contact (read path)."""
+        return [text for _url, text in self.fetch_vcard_entries()]
+
+    # --- write transport (mutation orchestration lives in writes.py) ---
+
+    def addressbook_url(self) -> str:
+        urls = self._addressbook_urls()
+        if not urls:
+            raise RuntimeError("No CardDAV addressbook found to write to.")
+        return urls[0]
+
+    def find_entry_by_uid(self, uid: str) -> tuple[str, str] | None:
+        """Return (resource_url, vcard_text) for the contact with this UID, or None."""
+        needle = f"UID:{uid}"
+        for url, text in self.fetch_vcard_entries():
+            if any(line.strip() == needle for line in text.splitlines()):
+                return url, text
+        return None
+
+    def put_vcard(self, url: str, text: str) -> None:
+        resp = self._client().request(
+            url, "PUT", text, {"Content-Type": "text/vcard; charset=utf-8"}
+        )
+        if resp.status not in (200, 201, 204):
+            raise RuntimeError(f"CardDAV PUT failed (HTTP {resp.status}).")
+
+    def delete_resource(self, url: str) -> None:
+        resp = self._client().request(url, "DELETE")
+        if resp.status not in (200, 204):
+            raise RuntimeError(f"CardDAV DELETE failed (HTTP {resp.status}).")
 
     def close(self) -> None:
         self._dav = None

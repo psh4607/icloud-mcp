@@ -27,7 +27,8 @@ class _FakeIMAP:
         return list(self._bodies)
 
     def fetch(self, uids, parts):
-        return {uid: {b"BODY[]": self._bodies[uid]} for uid in uids}
+        # Mirror imapclient: absent UIDs simply aren't in the result dict.
+        return {uid: {b"BODY[]": self._bodies[uid]} for uid in uids if uid in self._bodies}
 
 
 class _FakeMailClient:
@@ -95,8 +96,19 @@ def patched_clients_writable(monkeypatch):
         calls["event"] = (title, start, end)
         return f"Created “{title}”."
 
+    def record(name):
+        def fn(*a, **k):
+            calls[name] = (a, k)
+            return f"{name} ok"
+        return fn
+
     monkeypatch.setattr(server.write_ops, "send_message", fake_send)
     monkeypatch.setattr(server.write_ops, "create_event", fake_create)
+    for op in (
+        "update_event", "delete_event", "reply_message", "forward_message",
+        "create_contact", "update_contact", "delete_contact",
+    ):
+        monkeypatch.setattr(server.write_ops, op, record(op))
     return calls
 
 
@@ -193,3 +205,76 @@ async def test_create_event_accepted_creates(patched_clients_writable):
         )
         assert not result.isError
         assert "event" in patched_clients_writable
+
+
+@pytest.mark.anyio
+async def test_update_event_blocked_when_writes_disabled(patched_clients):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(server.mcp._mcp_server) as client:
+        result = await client.call_tool("update_event", {"uid": "e1", "title": "x"})
+        assert result.isError
+        assert any("ICLOUD_ENABLE_WRITES" in str(c.text) for c in result.content)
+
+
+@pytest.mark.anyio
+async def test_update_event_accepted(patched_clients_writable):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(
+        server.mcp._mcp_server, elicitation_callback=_accept_cb("accept")
+    ) as client:
+        result = await client.call_tool("update_event", {"uid": "e1", "title": "New"})
+        assert not result.isError
+        assert "update_event" in patched_clients_writable
+
+
+@pytest.mark.anyio
+async def test_reply_mail_accepted(patched_clients_writable):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(
+        server.mcp._mcp_server, elicitation_callback=_accept_cb("accept")
+    ) as client:
+        # uid 42 exists in the fake mailbox, so reply_context resolves.
+        result = await client.call_tool("reply_mail", {"uid": 42, "body": "thanks"})
+        assert not result.isError
+        assert "reply_message" in patched_clients_writable
+
+
+@pytest.mark.anyio
+async def test_reply_mail_unknown_uid(patched_clients_writable):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(
+        server.mcp._mcp_server, elicitation_callback=_accept_cb("accept")
+    ) as client:
+        result = await client.call_tool("reply_mail", {"uid": 999, "body": "x"})
+        assert not result.isError
+        assert any("not found" in str(c.text) for c in result.content)
+        assert "reply_message" not in patched_clients_writable
+
+
+@pytest.mark.anyio
+async def test_create_contact_accepted(patched_clients_writable):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(
+        server.mcp._mcp_server, elicitation_callback=_accept_cb("accept")
+    ) as client:
+        result = await client.call_tool("create_contact", {"full_name": "Ada Lovelace"})
+        assert not result.isError
+        assert "create_contact" in patched_clients_writable
+
+
+@pytest.mark.anyio
+async def test_delete_contact_declined(patched_clients_writable):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(
+        server.mcp._mcp_server, elicitation_callback=_accept_cb("decline")
+    ) as client:
+        result = await client.call_tool("delete_contact", {"uid": "c1"})
+        assert not result.isError
+        assert any("Cancelled" in str(c.text) for c in result.content)
+        assert "delete_contact" not in patched_clients_writable

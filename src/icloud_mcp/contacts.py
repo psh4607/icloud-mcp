@@ -41,12 +41,38 @@ def parse_vcard(text: str) -> Contact | None:
         parts = org_field.value if isinstance(org_field.value, list) else [org_field.value]
         org = " ".join(p.strip() for p in parts if p and p.strip())
 
+    uid_field = getattr(card, "uid", None)
+    uid = (uid_field.value.strip() if uid_field and uid_field.value else "")
+
     return Contact(
+        uid=uid,
         full_name=full_name,
         emails=_values(card, "email"),
         phones=_values(card, "tel"),
         org=org,
     )
+
+
+def build_vcard(
+    uid: str, full_name: str, emails: list[str], phones: list[str], org: str = ""
+) -> str:
+    """Serialize a new vCard (v3.0) from structured fields."""
+    card = vobject.vCard()
+    card.add("uid").value = uid
+    card.add("fn").value = full_name or "(no name)"
+    # vCard requires N; derive a minimal structured name from the full name.
+    n = card.add("n")
+    parts = (full_name or "").split()
+    n.value = vobject.vcard.Name(
+        family=parts[-1] if len(parts) > 1 else "", given=parts[0] if parts else ""
+    )
+    for email in emails:
+        card.add("email").value = email
+    for phone in phones:
+        card.add("tel").value = phone
+    if org:
+        card.add("org").value = [org]
+    return card.serialize()
 
 
 def list_contacts(client: ContactsClient, limit: int = 200) -> list[Contact]:

@@ -15,8 +15,10 @@ can be listed, searched, and read with no ability to change anything: the IMAP
 connection is opened read-only and bodies are fetched with `BODY.PEEK[]`, so
 messages are never even marked as read.
 
-Two mutating tools exist (`send_mail`, `create_event`) but are **disabled unless you
-set `ICLOUD_ENABLE_WRITES=1`**, and even then every write requires an interactive
+Mutating tools span mail (`send_mail`, `reply_mail`, `forward_mail`), calendar
+(`create_event`, `update_event`, `delete_event`), and contacts (`create_contact`,
+`update_contact`, `delete_contact`) — but all are **disabled unless you set
+`ICLOUD_ENABLE_WRITES=1`**, and even then every write requires an interactive
 confirmation (MCP elicitation) before it runs. See [Writes (opt-in)](#writes-opt-in).
 
 ### Writes (opt-in)
@@ -25,8 +27,9 @@ Mutations are gated two ways:
 
 1. **Operator switch** — write tools refuse with an explanatory error unless
    `ICLOUD_ENABLE_WRITES=1` is set in the server's environment.
-2. **Per-action confirmation** — when enabled, `send_mail`/`create_event` call back to
-   the client to confirm the exact action before executing.
+2. **Per-action confirmation** — when enabled, each write tool calls back to the client
+   to confirm the exact action before executing. Destructive operations (delete event /
+   contact) are gated identically — no extra force flag, just the same confirmation.
 
 iCloud issues a single app-specific password covering IMAP, SMTP, CalDAV, and CardDAV
 — there is no scoped "write-only" credential — so write-safety is *structural*: mail is
@@ -162,8 +165,15 @@ Notes:
 | `list_calendars` | Names of all calendars |
 | `list_contacts` | List address-book contacts (name, emails, phones, org) |
 | `search_contacts` | Find contacts matching text across name, org, and emails |
-| `send_mail` ⚠️ | Send a plain-text email — **write, opt-in + confirmation** |
-| `create_event` ⚠️ | Create a calendar event — **write, opt-in + confirmation** |
+| `send_mail` ⚠️ | Send a plain-text email |
+| `reply_mail` ⚠️ | Reply to a message by UID (quotes original; `reply_all` optional) |
+| `forward_mail` ⚠️ | Forward a message by UID to a new recipient |
+| `create_event` ⚠️ | Create a calendar event |
+| `update_event` ⚠️ | Edit an event by UID (only the fields you pass) |
+| `delete_event` ⚠️ | Delete an event by UID |
+| `create_contact` ⚠️ | Create a new contact |
+| `update_contact` ⚠️ | Edit a contact by UID (merges into the existing vCard) |
+| `delete_contact` ⚠️ | Delete a contact by UID |
 
 ⚠️ Write tools require `ICLOUD_ENABLE_WRITES=1` and confirm each action — see
 [Writes (opt-in)](#writes-opt-in).
