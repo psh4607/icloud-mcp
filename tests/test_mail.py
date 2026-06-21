@@ -38,28 +38,61 @@ def test_decode_header_handles_encoded_words():
     assert decoded == "Café"
 
 
+def test_strip_double_wrapped_mime_body():
+    # Real-world case (USPS Informed Delivery): the decoded text/plain part itself
+    # begins with a redundant MIME header block. Those headers must not leak.
+    body = (
+        "Content-Type: text/plain; charset=UTF-8\r\n"
+        "Content-Transfer-Encoding: 7bit\r\n"
+        "\r\n"
+        "Real body here."
+    )
+    raw = _msg("text/plain", body)
+    msg = email_lib.message_from_bytes(raw)
+    assert mail_ops.body_text(msg).strip() == "Real body here."
+    assert "Content-Type" not in mail_ops.body_snippet(msg)
+
+
+def test_normal_body_with_colon_is_not_stripped():
+    # A body that merely contains a colon (but doesn't start with a MIME header)
+    # must be left untouched.
+    raw = _msg("text/plain", "Note: meeting at 3pm. See you there.")
+    msg = email_lib.message_from_bytes(raw)
+    assert mail_ops.body_text(msg).strip() == "Note: meeting at 3pm. See you there."
+
+
 class _FakeIMAP:
     """Minimal stand-in for imapclient.IMAPClient covering what mail_ops uses."""
 
-    def __init__(self, bodies: dict[int, bytes]):
+    def __init__(self, bodies: dict[int, bytes], folders=None):
         self._bodies = bodies
+        self._folders = folders or []
+        self.last_search_criteria = None
 
     def select_folder(self, folder, readonly=True):
         pass
 
     def search(self, criteria):
+        self.last_search_criteria = criteria
         return list(self._bodies)
 
     def fetch(self, uids, parts):
         # Mirror imapclient: absent UIDs simply aren't in the result dict.
         return {uid: {b"BODY[]": self._bodies[uid]} for uid in uids if uid in self._bodies}
 
+    def list_folders(self):
+        # Mirror imapclient: (flags, delimiter, name) tuples.
+        return [((), "/", name) for name in self._folders]
+
 
 class _FakeMailClient:
-    def __init__(self, bodies):
-        self._imap = _FakeIMAP(bodies)
+    def __init__(self, bodies, folders=None):
+        self._imap = _FakeIMAP(bodies, folders)
 
     def select(self, folder="INBOX"):
+        return self._imap
+
+    def connection(self):
         return self._imap
 
 
@@ -100,3 +133,25 @@ def test_empty_subject_and_from_fall_back():
     full = mail_ops.get_message(client, 5)
     assert full.subject == "(no subject)"
     assert full.sender == "(unknown)"
+
+
+def test_list_messages_since_date_uses_imap_since():
+    from datetime import date
+
+    bodies = {1: _msg("text/plain", "hi", subject="Hi")}
+    client = _FakeMailClient(bodies)
+    mail_ops.list_messages(client, since=date(2026, 6, 20))
+    assert client._imap.last_search_criteria == ["SINCE", date(2026, 6, 20)]
+
+
+def test_list_messages_no_since_searches_all():
+    bodies = {1: _msg("text/plain", "hi")}
+    client = _FakeMailClient(bodies)
+    mail_ops.list_messages(client)
+    assert client._imap.last_search_criteria == ["ALL"]
+
+
+def test_list_folders_returns_names():
+    client = _FakeMailClient({}, folders=["INBOX", "Sent Messages", "Archive"])
+    folders = mail_ops.list_folders(client)
+    assert [f.name for f in folders] == ["INBOX", "Sent Messages", "Archive"]

@@ -8,13 +8,14 @@ fetched with ``BODY.PEEK[]`` so messages are never marked read.
 from __future__ import annotations
 
 import email as email_lib
+import re
 from datetime import date
 from email.header import decode_header as _decode_header
 from email.message import Message as EmailMessage
 from html.parser import HTMLParser
 
 from .clients import MailClient
-from .models import FullMessage, Message
+from .models import Folder, FullMessage, Message
 
 
 # --------------------------------------------------------------------------
@@ -64,17 +65,42 @@ def html_to_text(html: str) -> str:
     return parser.get_text()
 
 
+# Some senders (e.g. USPS Informed Delivery) double-wrap the body: the decoded
+# text/plain part itself begins with a redundant MIME header block terminated by a
+# blank line. Detect that and strip it so headers don't leak into the body/snippet.
+_MIME_HEADER_START = re.compile(
+    r"^(Content-Type|Content-Transfer-Encoding|Content-Disposition|MIME-Version)\s*:",
+    re.IGNORECASE,
+)
+_HEADER_LINE = re.compile(r"^([A-Za-z][A-Za-z0-9-]*\s*:|\s)")  # field or continuation
+
+
+def _strip_leading_mime_headers(text: str) -> str:
+    """Drop a redundant leading MIME header block some senders embed in the body."""
+    lines = text.splitlines(keepends=True)
+    if not lines or not _MIME_HEADER_START.match(lines[0]):
+        return text
+    for i, line in enumerate(lines):
+        if line.strip() == "":  # blank line ends the header block
+            return "".join(lines[i + 1:])
+        if not _HEADER_LINE.match(line):  # not header-shaped -> not a real block
+            return text
+    return text
+
+
 def _find_part_text(msg: EmailMessage, content_type: str) -> str:
     if msg.is_multipart():
         for part in msg.walk():
             if part.get_content_type() == content_type:
                 raw = part.get_payload(decode=True)
                 if raw:
-                    return raw.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    decoded = raw.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    return _strip_leading_mime_headers(decoded)
     elif msg.get_content_type() == content_type:
         raw = msg.get_payload(decode=True)
         if raw:
-            return raw.decode(msg.get_content_charset() or "utf-8", errors="replace")
+            decoded = raw.decode(msg.get_content_charset() or "utf-8", errors="replace")
+            return _strip_leading_mime_headers(decoded)
     return ""
 
 
@@ -166,6 +192,12 @@ def search_messages(
         out.append(Message(**_summary_fields(uid, msg)))
     out.sort(key=lambda m: m.uid, reverse=True)
     return out
+
+
+def list_folders(client: MailClient) -> list[Folder]:
+    """List the mailbox folder names available over IMAP."""
+    conn = client.connection()
+    return [Folder(name=name) for _flags, _delim, name in conn.list_folders()]
 
 
 def get_message(client: MailClient, uid: int, folder: str = "INBOX") -> FullMessage | None:

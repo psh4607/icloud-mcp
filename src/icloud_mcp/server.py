@@ -11,7 +11,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -19,7 +19,7 @@ from . import calendar as cal_ops
 from . import mail as mail_ops
 from .clients import CalendarClient, MailClient
 from .config import Settings
-from .models import Calendar, Event, FullMessage, Message
+from .models import Calendar, Event, Folder, FullMessage, Message
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="icloud-io")
 _CALL_TIMEOUT = 30  # seconds
@@ -70,12 +70,34 @@ def _window(app: AppContext, days_ahead: int) -> tuple[datetime, datetime]:
 # --------------------------------------------------------------------------
 
 @mcp.tool()
+async def list_mail(
+    ctx: Context, folder: str = "INBOX", since_date: str = "", limit: int = 50
+) -> list[Message]:
+    """List messages in a folder (default INBOX), newest first.
+
+    `since_date` is an optional YYYY-MM-DD; when set, only messages on/after that
+    date are returned (server-side IMAP SINCE, which is date-granular and evaluated
+    in the server's timezone).
+    """
+    app = _ctx(ctx)
+    since = date.fromisoformat(since_date) if since_date else None
+    return await _run_blocking(mail_ops.list_messages, app.mail, folder, since, limit)
+
+
+@mcp.tool()
 async def search_mail(
     ctx: Context, query: str, folder: str = "INBOX", limit: int = 50
 ) -> list[Message]:
     """Full-text search mail in a folder (default INBOX). Returns newest first."""
     app = _ctx(ctx)
     return await _run_blocking(mail_ops.search_messages, app.mail, query, folder, limit)
+
+
+@mcp.tool()
+async def list_folders(ctx: Context) -> list[Folder]:
+    """List the IMAP mailbox folder names (e.g. INBOX, Sent Messages, Archive)."""
+    app = _ctx(ctx)
+    return await _run_blocking(mail_ops.list_folders, app.mail)
 
 
 @mcp.tool()

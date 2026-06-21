@@ -77,6 +77,16 @@ async def test_search_mail_tool(patched_clients):
 
 
 @pytest.mark.anyio
+async def test_list_mail_tool(patched_clients):
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    async with create_connected_server_and_client_session(server.mcp._mcp_server) as client:
+        result = await client.call_tool("list_mail", {"since_date": "2026-06-20"})
+        assert not result.isError
+        assert any("Statement ready" in str(c.text) for c in result.content)
+
+
+@pytest.mark.anyio
 async def test_list_calendars_tool_empty(patched_clients):
     from mcp.shared.memory import create_connected_server_and_client_session
 

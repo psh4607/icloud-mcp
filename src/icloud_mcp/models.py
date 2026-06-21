@@ -28,5 +28,9 @@ class Event(BaseModel):
     calendar: str = ""
 
 
+class Folder(BaseModel):
+    name: str
+
+
 class Calendar(BaseModel):
     name: str

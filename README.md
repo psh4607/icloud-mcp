@@ -136,7 +136,9 @@ Notes:
 
 | Tool | Description |
 |---|---|
+| `list_mail` | List a folder (default INBOX), newest first, with optional `since_date` |
 | `search_mail` | Full-text search the inbox (or a named folder) |
+| `list_folders` | List the available IMAP mailbox folder names |
 | `get_message` | Fetch one message by UID, with full body |
 | `list_events` | Calendar events in a date window |
 | `search_events` | Events whose title matches text, in a window |
@@ -158,6 +160,13 @@ Notes:
 - **Snippets** prefer the `text/plain` part; for HTML-only mail, tags are
   stripped (`<style>`/`<script>`/`<head>` content discarded) so you still get a
   readable preview.
+- **Double-wrapped bodies:** some senders (e.g. USPS Informed Delivery) embed a
+  redundant MIME header block at the top of the decoded body. A leading
+  `Content-*`/`MIME-Version` header block is stripped so those headers don't leak
+  into the snippet or body.
+- **`since_date` is date-granular** and evaluated in the IMAP server's timezone
+  (UTC for iCloud), so a `since_date` of today can include late-yesterday messages
+  in your local time.
 
 ## Development
 
