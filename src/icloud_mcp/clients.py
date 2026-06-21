@@ -10,11 +10,33 @@ mailbox — a structural guarantee for the read-only v1.
 
 from __future__ import annotations
 
+import html
+import imaplib
+import re
+from urllib.parse import urljoin
+
 import caldav
 import imapclient
 
 from .auth import get_password
 from .config import Settings
+
+# Errors that indicate a dead/stale IMAP socket and warrant a single reconnect.
+_IMAP_CONN_ERRORS = (OSError, imaplib.IMAP4.error, imapclient.exceptions.IMAPClientError)
+
+_CARDDAV = "urn:ietf:params:xml:ns:carddav"
+_HREF_RE = re.compile(r"<(?:\w+:)?href[^>]*>([^<]+)</(?:\w+:)?href>", re.I)
+_RESPONSE_RE = re.compile(r"<(?:\w+:)?response[^>]*>(.*?)</(?:\w+:)?response>", re.I | re.S)
+_ADDRDATA_RE = re.compile(r"<(?:\w+:)?address-data[^>]*>(.*?)</(?:\w+:)?address-data>", re.I | re.S)
+
+
+def _href_within(element: str, raw: str) -> str | None:
+    """The <href> nested inside a named element (not the response's own href)."""
+    block = re.search(rf"<(?:\w+:)?{element}\b[^>]*>(.*?)</(?:\w+:)?{element}>", raw, re.I | re.S)
+    if not block:
+        return None
+    href = _HREF_RE.search(block.group(1))
+    return href.group(1).strip() if href else None
 
 
 class MailClient:
@@ -33,16 +55,108 @@ class MailClient:
         return self._client
 
     def select(self, folder: str = "INBOX") -> imapclient.IMAPClient:
-        client = self.connection()
-        client.select_folder(folder, readonly=True)
-        return client
+        # Reconnect once on a stale/dropped connection — long-lived servers commonly
+        # see the socket time out while idle, which surfaces on the first command.
+        for last_attempt in (False, True):
+            client = self.connection()
+            try:
+                client.select_folder(folder, readonly=True)
+                return client
+            except _IMAP_CONN_ERRORS:
+                self.close()
+                if last_attempt:
+                    raise
 
     def close(self) -> None:
         if self._client is not None:
             try:
                 self._client.logout()
+            except Exception:  # logging out a dead connection shouldn't mask the cause
+                pass
             finally:
                 self._client = None
+
+
+class ContactsClient:
+    """Read-only CardDAV access to iCloud contacts.
+
+    ``caldav``'s ``DAVClient`` is CalDAV-only, but its generic WebDAV verbs
+    (``propfind``/``report``/``request``) are enough to run the CardDAV discovery
+    dance and pull vCards. Discovery is done once and the addressbook URLs cached.
+    """
+
+    def __init__(self, settings: Settings):
+        self._settings = settings
+        self._dav: caldav.DAVClient | None = None
+        self._addressbooks: list[str] | None = None
+
+    def _client(self) -> caldav.DAVClient:
+        if self._dav is None:
+            s = self._settings
+            self._dav = caldav.DAVClient(
+                url=s.carddav_url,
+                username=s.username,
+                password=get_password(s.keyring_service, s.username),
+            )
+        return self._dav
+
+    def _propfind(self, url: str, prop_xml: str, depth: str) -> str:
+        body = (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<d:propfind xmlns:d="DAV:" xmlns:c="%s"><d:prop>%s</d:prop></d:propfind>'
+            % (_CARDDAV, prop_xml)
+        )
+        return self._client().request(
+            url, "PROPFIND", body, {"Depth": depth, "Content-Type": "application/xml"}
+        ).raw
+
+    def _addressbook_urls(self) -> list[str]:
+        if self._addressbooks is not None:
+            return self._addressbooks
+        s = self._settings
+        # 1. current-user-principal at the service root.
+        raw = self._propfind(s.carddav_url, "<d:current-user-principal/>", "0")
+        href = _href_within("current-user-principal", raw)
+        if not href:
+            self._addressbooks = []
+            return self._addressbooks
+        principal = urljoin(s.carddav_url, href)
+        # 2. addressbook-home-set on the principal (returns a partitioned host).
+        raw = self._propfind(principal, "<c:addressbook-home-set/>", "0")
+        href = _href_within("addressbook-home-set", raw)
+        if not href:
+            self._addressbooks = []
+            return self._addressbooks
+        home = urljoin(principal, href)
+        # 3. addressbook collections under the home (Depth 1).
+        raw = self._propfind(home, "<d:resourcetype/>", "1")
+        urls: list[str] = []
+        for block in _RESPONSE_RE.findall(raw):
+            if "addressbook" in block.lower():
+                href = _HREF_RE.search(block)
+                if href:
+                    urls.append(urljoin(home, href.group(1).strip()))
+        self._addressbooks = urls
+        return urls
+
+    def fetch_vcards(self) -> list[str]:
+        """Return raw vCard text for every contact across all addressbooks."""
+        report = (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<c:addressbook-query xmlns:d="DAV:" xmlns:c="%s">'
+            "<d:prop><d:getetag/><c:address-data/></d:prop></c:addressbook-query>" % _CARDDAV
+        )
+        cards: list[str] = []
+        for url in self._addressbook_urls():
+            raw = self._client().request(
+                url, "REPORT", report, {"Depth": "1", "Content-Type": "application/xml"}
+            ).raw
+            cards.extend(html.unescape(m).strip() for m in _ADDRDATA_RE.findall(raw))
+        return cards
+
+    def close(self) -> None:
+        self._dav = None
+        self._addressbooks = None
 
 
 class CalendarClient:

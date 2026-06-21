@@ -14,12 +14,15 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from mcp.server.fastmcp import Context, FastMCP
+from pydantic import BaseModel
 
 from . import calendar as cal_ops
+from . import contacts as contacts_ops
 from . import mail as mail_ops
-from .clients import CalendarClient, MailClient
+from . import writes as write_ops
+from .clients import CalendarClient, ContactsClient, MailClient
 from .config import Settings
-from .models import Calendar, Event, Folder, FullMessage, Message
+from .models import Calendar, Contact, Event, Folder, FullMessage, Message
 
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="icloud-io")
 _CALL_TIMEOUT = 30  # seconds
@@ -37,6 +40,7 @@ class AppContext:
     settings: Settings
     mail: MailClient
     calendar: CalendarClient
+    contacts: ContactsClient
 
 
 @asynccontextmanager
@@ -44,11 +48,13 @@ async def lifespan(_server: FastMCP):
     settings = Settings.from_env()
     mail = MailClient(settings)
     calendar = CalendarClient(settings)
+    contacts = ContactsClient(settings)
     try:
-        yield AppContext(settings=settings, mail=mail, calendar=calendar)
+        yield AppContext(settings=settings, mail=mail, calendar=calendar, contacts=contacts)
     finally:
         mail.close()
         calendar.close()
+        contacts.close()
 
 
 mcp = FastMCP("icloud", lifespan=lifespan)
@@ -56,6 +62,20 @@ mcp = FastMCP("icloud", lifespan=lifespan)
 
 def _ctx(ctx: Context) -> AppContext:
     return ctx.request_context.lifespan_context
+
+
+class Confirm(BaseModel):
+    """Minimal elicitation schema — the accept/decline action is what matters."""
+
+    confirm: bool = True
+
+
+def _require_writes(app: AppContext) -> None:
+    if not app.settings.enable_writes:
+        raise ValueError(
+            "Writes are disabled. Set ICLOUD_ENABLE_WRITES=1 in the server "
+            "environment to enable mail/calendar mutations."
+        )
 
 
 def _window(app: AppContext, days_ahead: int) -> tuple[datetime, datetime]:
@@ -130,6 +150,64 @@ async def list_calendars(ctx: Context) -> list[Calendar]:
     """List the names of all available calendars."""
     app = _ctx(ctx)
     return await _run_blocking(cal_ops.list_calendars, app.calendar)
+
+
+@mcp.tool()
+async def list_contacts(ctx: Context, limit: int = 200) -> list[Contact]:
+    """List contacts from the iCloud address book (name, emails, phones, org)."""
+    app = _ctx(ctx)
+    return await _run_blocking(contacts_ops.list_contacts, app.contacts, limit)
+
+
+@mcp.tool()
+async def search_contacts(ctx: Context, query: str, limit: int = 50) -> list[Contact]:
+    """Find contacts matching `query` across name, org, and email addresses."""
+    app = _ctx(ctx)
+    return await _run_blocking(contacts_ops.search_contacts, app.contacts, query, limit)
+
+
+# --------------------------------------------------------------------------
+# Mutating tools (opt-in via ICLOUD_ENABLE_WRITES, each requires confirmation)
+# --------------------------------------------------------------------------
+
+@mcp.tool()
+async def send_mail(
+    ctx: Context, to: str, subject: str, body: str, cc: str = ""
+) -> str:
+    """Send a plain-text email. Requires writes enabled + interactive confirmation."""
+    app = _ctx(ctx)
+    _require_writes(app)
+    summary = f"Send email to {to}" + (f" (cc {cc})" if cc else "") + f" — “{subject}”?"
+    result = await ctx.elicit(message=summary, schema=Confirm)
+    if result.action != "accept":
+        return "Cancelled — email not sent."
+    return await _run_blocking(write_ops.send_message, app.settings, to, subject, body, cc)
+
+
+@mcp.tool()
+async def create_event(
+    ctx: Context,
+    title: str,
+    start: str,
+    end: str,
+    calendar: str = "",
+    location: str = "",
+) -> str:
+    """Create a calendar event. `start`/`end` are ISO-8601 (e.g. 2026-06-21T14:00:00).
+
+    Requires writes enabled + interactive confirmation.
+    """
+    app = _ctx(ctx)
+    _require_writes(app)
+    where = f" at {location}" if location else ""
+    result = await ctx.elicit(
+        message=f"Create event “{title}” from {start} to {end}{where}?", schema=Confirm
+    )
+    if result.action != "accept":
+        return "Cancelled — event not created."
+    return await _run_blocking(
+        write_ops.create_event, app.calendar, title, start, end, calendar, location
+    )
 
 
 # --------------------------------------------------------------------------

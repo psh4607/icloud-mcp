@@ -10,11 +10,28 @@ any standard IMAP/CalDAV provider.
 
 ## Status
 
-**v1 is read-only.** Mail and calendar can be listed, searched, and read, but
-nothing can be sent, created, modified, or deleted. The IMAP connection is opened
-read-only and bodies are fetched with `BODY.PEEK[]`, so messages are never even
-marked as read. Mutating tools (send mail, create events) are planned for a
-future version behind explicit per-action confirmation.
+**Read-only by default; writes are strictly opt-in.** Mail, calendar, and contacts
+can be listed, searched, and read with no ability to change anything: the IMAP
+connection is opened read-only and bodies are fetched with `BODY.PEEK[]`, so
+messages are never even marked as read.
+
+Two mutating tools exist (`send_mail`, `create_event`) but are **disabled unless you
+set `ICLOUD_ENABLE_WRITES=1`**, and even then every write requires an interactive
+confirmation (MCP elicitation) before it runs. See [Writes (opt-in)](#writes-opt-in).
+
+### Writes (opt-in)
+
+Mutations are gated two ways:
+
+1. **Operator switch** — write tools refuse with an explanatory error unless
+   `ICLOUD_ENABLE_WRITES=1` is set in the server's environment.
+2. **Per-action confirmation** — when enabled, `send_mail`/`create_event` call back to
+   the client to confirm the exact action before executing.
+
+iCloud issues a single app-specific password covering IMAP, SMTP, CalDAV, and CardDAV
+— there is no scoped "write-only" credential — so write-safety is *structural*: mail is
+sent over a separate, fresh SMTP connection (the read path's IMAP client has no send
+capability), and the opt-in flag + confirmation guard every mutation.
 
 ## Install
 
@@ -143,6 +160,13 @@ Notes:
 | `list_events` | Calendar events in a date window |
 | `search_events` | Events whose title matches text, in a window |
 | `list_calendars` | Names of all calendars |
+| `list_contacts` | List address-book contacts (name, emails, phones, org) |
+| `search_contacts` | Find contacts matching text across name, org, and emails |
+| `send_mail` ⚠️ | Send a plain-text email — **write, opt-in + confirmation** |
+| `create_event` ⚠️ | Create a calendar event — **write, opt-in + confirmation** |
+
+⚠️ Write tools require `ICLOUD_ENABLE_WRITES=1` and confirm each action — see
+[Writes (opt-in)](#writes-opt-in).
 
 **Resources** (passive context):
 
@@ -179,7 +203,11 @@ Notes:
 
 - The app-specific password lives in the OS keyring only — never in `.env`,
   never committed.
-- Mail/calendar access is read-only; the IMAP session cannot mutate the mailbox.
+- Read access (mail, calendar, contacts) cannot mutate anything; the IMAP session
+  is opened read-only.
+- Writes are **off by default**. They require `ICLOUD_ENABLE_WRITES=1` *and* an
+  interactive confirmation per action, and mail is sent over a separate SMTP
+  connection isolated from the read path.
 - An app-specific password can be revoked at any time from appleid.apple.com
   without affecting your Apple ID.
 

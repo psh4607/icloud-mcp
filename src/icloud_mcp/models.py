@@ -32,5 +32,12 @@ class Folder(BaseModel):
     name: str
 
 
+class Contact(BaseModel):
+    full_name: str = "(no name)"
+    emails: list[str] = Field(default_factory=list)
+    phones: list[str] = Field(default_factory=list)
+    org: str = ""
+
+
 class Calendar(BaseModel):
     name: str

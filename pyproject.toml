@@ -11,6 +11,7 @@ dependencies = [
     "mcp[cli]",
     "imapclient",
     "caldav",
+    "vobject",
     "keyring",
     "pydantic",
 ]

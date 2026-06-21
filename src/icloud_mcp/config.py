@@ -29,6 +29,10 @@ def _local_tz() -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     username: str
@@ -37,8 +41,10 @@ class Settings:
     smtp_host: str
     smtp_port: int
     caldav_url: str
+    carddav_url: str
     keyring_service: str
     tz: ZoneInfo
+    enable_writes: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -54,6 +60,8 @@ class Settings:
             smtp_host=os.getenv("ICLOUD_SMTP_HOST", "smtp.mail.me.com"),
             smtp_port=int(os.getenv("ICLOUD_SMTP_PORT", "587")),
             caldav_url=os.getenv("ICLOUD_CALDAV_URL", "https://caldav.icloud.com/"),
+            carddav_url=os.getenv("ICLOUD_CARDDAV_URL", "https://contacts.icloud.com/"),
             keyring_service=os.getenv("ICLOUD_KEYRING_SERVICE", "icloud-mcp"),
             tz=_local_tz(),
+            enable_writes=_truthy(os.getenv("ICLOUD_ENABLE_WRITES")),
         )
