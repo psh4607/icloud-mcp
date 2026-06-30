@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.eodozzy/icloud-mcp",
-  "description": "Read-only-by-default MCP server for iCloud mail, calendar, and contacts over IMAP/CalDAV/CardDAV, with OS-keyring credential storage and opt-in, confirmation-gated writes.",
+  "description": "Read-only-by-default MCP server for iCloud mail, calendar, and contacts (IMAP/CalDAV/CardDAV).",
   "repository": {
     "url": "https://github.com/eodozzy/icloud-mcp",
     "source": "github"
