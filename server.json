@@ -1,0 +1,99 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.eodozzy/icloud-mcp",
+  "description": "Read-only-by-default MCP server for iCloud mail, calendar, and contacts over IMAP/CalDAV/CardDAV, with OS-keyring credential storage and opt-in, confirmation-gated writes.",
+  "repository": {
+    "url": "https://github.com/eodozzy/icloud-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "icloud-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ICLOUD_USERNAME",
+          "description": "Your Apple ID email (the IMAP/CalDAV username).",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_KEYRING_SERVICE",
+          "description": "OS-keyring service name to read the app-specific password from. Default: icloud-mcp. Set to reuse an existing entry.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_APP_PASSWORD",
+          "description": "App-specific password. Fallback only; preferred storage is the OS keyring. Used only when no keyring entry is found.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "ICLOUD_ENABLE_WRITES",
+          "description": "Enable mutating tools (send/reply/forward mail, create/update/delete event & contact). Off by default; each write still requires interactive confirmation. Accepts 1/true/yes/on.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_IMAP_HOST",
+          "description": "IMAP host override. Default: imap.mail.me.com",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_IMAP_PORT",
+          "description": "IMAP port override. Default: 993",
+          "isRequired": false,
+          "format": "number",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_SMTP_HOST",
+          "description": "SMTP host override (used only by write/send tools). Default: smtp.mail.me.com",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_SMTP_PORT",
+          "description": "SMTP port override. Default: 587",
+          "isRequired": false,
+          "format": "number",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_CALDAV_URL",
+          "description": "CalDAV base URL override. Default: https://caldav.icloud.com/",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_CARDDAV_URL",
+          "description": "CardDAV base URL override. Default: https://contacts.icloud.com/",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "ICLOUD_TZ",
+          "description": "IANA timezone for rendering/scoping events. Default: system local time.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
