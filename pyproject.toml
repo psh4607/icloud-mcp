@@ -1,11 +1,11 @@
 [project]
 name = "icloud-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Model Context Protocol server for iCloud mail and calendar, with macOS Keychain credential storage."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Eric Osborne" }]
+authors = [{ name = "eodozzy" }]
 keywords = ["mcp", "icloud", "imap", "caldav", "model-context-protocol"]
 dependencies = [
     "mcp[cli]",
