@@ -19,7 +19,7 @@ from .models import Folder, FullMessage, Message
 
 
 # --------------------------------------------------------------------------
-# Header + body decoding (ported from Talos mail_capture.py)
+# Header + body decoding
 # --------------------------------------------------------------------------
 
 def decode_header(raw: str) -> str:

@@ -71,8 +71,8 @@ order for the password:
 1. OS keyring (`ICLOUD_KEYRING_SERVICE`, default `icloud-mcp`, + username)
 2. `ICLOUD_APP_PASSWORD` environment variable (fallback)
 
-To **reuse an existing keyring entry** (e.g. one named `talos-icloud`), set
-`ICLOUD_KEYRING_SERVICE=talos-icloud`.
+To **reuse an existing keyring entry** (e.g. one named `my-icloud`), set
+`ICLOUD_KEYRING_SERVICE=my-icloud`.
 
 ## Configuration
 

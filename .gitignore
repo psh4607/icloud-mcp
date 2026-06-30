@@ -13,6 +13,7 @@ venv/
 
 # Secrets — never commit
 .env
+.claude/settings.local.json
 
 # Editor / OS
 .DS_Store

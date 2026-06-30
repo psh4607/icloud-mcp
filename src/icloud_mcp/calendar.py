@@ -1,7 +1,7 @@
 """Stateless CalDAV read operations.
 
-Ported from Talos calendar_capture.py — TZ-aware handling that normalizes
-all-day ``date`` events against timed ``datetime`` events.
+TZ-aware handling that normalizes all-day ``date`` events against timed
+``datetime`` events.
 """
 
 from __future__ import annotations
