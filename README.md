@@ -1,5 +1,11 @@
 # icloud-mcp
 
+<!-- mcp-name: io.github.eodozzy/icloud-mcp -->
+
+[![PyPI](https://img.shields.io/pypi/v/icloud-mcp.svg)](https://pypi.org/project/icloud-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/icloud-mcp.svg)](https://pypi.org/project/icloud-mcp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI
 assistants **read-only** access to your iCloud mail and calendar over IMAP and
 CalDAV. Credentials live in your OS keyring (macOS Keychain by default) — never
@@ -37,6 +43,19 @@ sent over a separate, fresh SMTP connection (the read path's IMAP client has no 
 capability), and the opt-in flag + confirmation guard every mutation.
 
 ## Install
+
+```bash
+pip install icloud-mcp
+```
+
+Or run it without installing — handy for MCP clients that launch the server
+on demand:
+
+```bash
+uvx icloud-mcp
+```
+
+To install the latest unreleased code straight from GitHub:
 
 ```bash
 pip install git+https://github.com/eodozzy/icloud-mcp
