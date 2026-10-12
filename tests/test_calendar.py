@@ -93,14 +93,16 @@ def test_list_calendars():
     assert names == ["Home", "Work"]
 
 
-def test_failing_calendar_is_skipped():
+def test_failing_calendar_is_visible_and_sanitized():
     class _Boom(_Calendar):
         def search(self, *a, **k):
-            raise RuntimeError("calendar unavailable")
+            raise RuntimeError("secret-password")
 
     good = _Calendar("Good", [_timed(9, "Ok", "u1")])
     client = _FakeCalendarClient([_Boom("Bad", []), good])
     start = datetime.combine(date(2026, 6, 20), time.min, tzinfo=TZ)
     end = datetime.combine(date(2026, 6, 21), time.max, tzinfo=TZ)
-    events = cal_ops.list_events(client, start, end, TZ)
-    assert [e.summary for e in events] == ["Ok"]
+    import pytest
+    with pytest.raises(RuntimeError, match="Calendar query failed") as error:
+        cal_ops.list_events(client, start, end, TZ)
+    assert "secret-password" not in str(error.value)

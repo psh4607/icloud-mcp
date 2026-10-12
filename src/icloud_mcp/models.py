@@ -5,20 +5,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class Message(BaseModel):
-    uid: int
-    date: str = Field("", description="Raw Date header from the message")
-    sender: str = Field("", description="Decoded From header", alias="from")
-    subject: str = ""
-    snippet: str = Field("", description="Plain-text preview (HTML stripped if needed)")
-
-    model_config = {"populate_by_name": True}
-
-
-class FullMessage(Message):
-    body: str = Field("", description="Full decoded text body")
-
-
 class Event(BaseModel):
     uid: str = ""
     summary: str = "(no title)"
@@ -26,18 +12,6 @@ class Event(BaseModel):
     end: str = ""
     all_day: bool = False
     calendar: str = ""
-
-
-class Folder(BaseModel):
-    name: str
-
-
-class Contact(BaseModel):
-    uid: str = Field("", description="vCard UID — pass to update/delete_contact")
-    full_name: str = "(no name)"
-    emails: list[str] = Field(default_factory=list)
-    phones: list[str] = Field(default_factory=list)
-    org: str = ""
 
 
 class Calendar(BaseModel):

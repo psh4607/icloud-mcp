@@ -46,7 +46,7 @@ def list_events(
         try:
             found = cal.search(start=start, end=end, event=True, expand=True)
         except Exception:
-            continue
+            raise RuntimeError("Calendar query failed; no partial results returned.") from None
         cal_name = cal.get_display_name()
         for ev in found:
             comp = ev.icalendar_component

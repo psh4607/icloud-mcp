@@ -1,27 +1,25 @@
 [project]
-name = "icloud-mcp"
-version = "0.1.1"
-description = "A Model Context Protocol server for iCloud mail and calendar, with macOS Keychain credential storage."
+name = "icloud-calendar-readonly"
+version = "0.2.0"
+description = "Calendar-only read-only iCloud MCP with an Apple HTTPS transport allowlist."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "eodozzy" }]
 keywords = ["mcp", "icloud", "imap", "caldav", "model-context-protocol"]
 dependencies = [
-    "mcp[cli]",
-    "imapclient",
-    "caldav",
-    "vobject",
-    "keyring",
-    "pydantic",
-    "python-dotenv",
+    "mcp==1.30.0",
+    "caldav==3.4.0",
+    "niquests==3.21.2",
+    "keyring==25.7.0",
+    "pydantic==2.14.1",
 ]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-anyio"]
 
 [project.scripts]
-icloud-mcp = "icloud_mcp.server:main"
+icloud-calendar-readonly = "icloud_mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]
